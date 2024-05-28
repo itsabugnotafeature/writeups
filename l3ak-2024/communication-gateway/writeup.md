@@ -10,9 +10,11 @@ Something is in-front of you, and you don't even know it.
 
 ### Writeup
 
+An RF challenge! My personal favorite category and one I am glad to see appearing in more CTFs.
+
 We are provided with a .wav file sampled at 48kHz. This means it is possible that there is audible frequencies in the signal. Indeed if you play it you can clearly hear at least two different frequencies, indicating some sort of FSK modulation. It sounds sort of like an old dial up modem (in fact that's sort of what it is, but I didn't know that until after solving it).
 
-Let's take a look at the spectrogram. *\*opens up Matlab\**
+Let's take a look at the spectrogram. *\*unapologetically opens up Matlab\**
 
 ![alt text](image-2.png)
 
@@ -20,7 +22,7 @@ Taking a spectrogram over the whole signal we see that there are two very promin
 
 ![](image-1.png)
 
-Would you look at that, nice binary FSK, with the smallest division being about 4800 samples. 4800 happens to be a nice multiple of the sampling rate, which is a good sign. So let's write a quick and dirty FSK demodulator.
+The frequencies are less distinct because we have narrowed our time window, but we can see how they vary over time more precisely. Would you look at that, nice binary FSK, with the smallest division being about 4800 samples. 4800 happens to be a nice multiple of the sampling rate, which is a good sign. So let's write a quick and dirty FSK demodulator.
 
 ```matlab
 % Read in the samples
@@ -29,13 +31,16 @@ samples = audioread("file10.wav");
 
 % Reserve space for the symbols we'll be demodulating
 symbols = zeros(length(samples) / 4800, 1);
+% Matlab indexes from 1
 for i = 1:length(symbols)
-    % Take the 4800 point fft of this 4800 sample segment
+    % Take the 4800 point fft of the ith 4800 sample segment
     freqs = abs(fft(samples(1 + (i - 1) * 4800:i * 4800)));
-    % Pick out the highest frequency
+    % Pick out the most prominent frequency
     best_freq = find(freqs == max(freqs), 1);
     % With two frequencies there are two ways to encode a 1 bit
     % I guessed that the highest of the two would be a 1.
+    % If at the end of this everything comes out as gibberish
+    % we an try switching this around to see if it helps.
     if best_freq == 159
         % Corresponds to the higher freq we saw (~1.6kHz) because:
         % 159 * 48000 / 4800 = 1590.
@@ -78,7 +83,7 @@ So, let's go over what we know. There's not enough symbols for anything more tha
 
 I was stuck for a while at how to interpret these rows, so I started looking for 10 bit protocols. The first thing I thought of was UART, because it's a common hardware interface. In order to hit 10 bits it must have a parity bit and a stop bit. However the 9th column is consistently a 0, even though there are varying numbers of 1s in each row, so it can't be a parity bit.
 
-Consistently 0 huh..., sounds like ASCII, so maybe the ASCII is in columns 2-9. I looked up the UART protocol on Wikipedia and found out it idles at a 1 and then uses a 0 to signal the start of a message. If we compare that to the symbols we recovered, we can clearly see that we have a start bit, 8 ASCII bits with a consistent 0 at the end (so it's least significant bit first), and then a single stop bit. The fact that the first and last two symbols are all 1s supports this hypothesis, because it is the idling value. When I removed the leading 1s earlier, it turns out I was actually trimming the idle values. 
+Consistently 0 huh..., sounds like ASCII, so maybe the ASCII is in columns 2-9. I looked up the UART protocol on Wikipedia and found out it idles at a 1 and then uses a 0 to signal the start of a message. If we compare that to the symbols we recovered, we can clearly see that we have a start bit (0), 8 ASCII bits with a consistent 0 at the end (so I know it's least significant bit first), and then a single stop bit (1). The fact that the first and last two symbols are all 1s supports this hypothesis, because it is the idling value. When I removed the leading 1s earlier, it turns out I was actually trimming the idle values. 
 
 Now let's test the hypothesis by converting each bits 2-9 from each row to an ASCII character.
 
@@ -100,6 +105,10 @@ disp(flag);
 >> solve
 L3AK{s1gn4ls_0f_h0p3}
 ```
+
+Turns out it was sending UART frames.
+
+Turns out the signal was using actually made with `minimodem` a CLI tool for sending data over audio lines. I assume the idea is that you could have an easy hardware demodulator/decoder with just an FSK chip and a UART chip. I could've used `minimodem` to decode it easily, but the process of working through the spectrogram to the demoulation to the decoding was both fun and interesting. I hope that other people find this writeup as interesting as I found the challenge.
 
 The full solution script is below.
 
@@ -145,3 +154,5 @@ flag = bin2char(reshape(uart_data_bits.', 1, []));
 disp(flag); 
 % L3AK{s1gn4ls_0f_h0p3}
 ```
+
+If you are interested in RF or have any questions, my discord is `sanderbeggar` and I would love to talk.
